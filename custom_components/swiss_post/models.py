@@ -162,6 +162,58 @@ class Shipment:
             raw=data,
         )
 
+    @classmethod
+    def from_mobserv_dict(cls, data: Dict[str, Any], account_name: Optional[str] = None) -> "Shipment":
+        """Parse shipment item from Swiss Post mobile overview API."""
+        mailpiece_id = str(data.get("mailpieceId") or "")
+        status_type = data.get("mailpieceStatusType", "UNKNOWN")
+        is_complete = bool(data.get("isComplete"))
+        is_delivered = status_type == "DELIVERED" or is_complete
+        is_returned = status_type == "RETURNED"
+
+        ts_ms = data.get("statusTimestamp")
+        status_dt = None
+        if ts_ms and isinstance(ts_ms, (int, float)):
+            try:
+                status_dt = datetime.fromtimestamp(ts_ms / 1000.0)
+            except Exception:
+                pass
+
+        delivery_addr_data = data.get("deliveryAddress") or {}
+        addr_detail = delivery_addr_data.get("addressDetail") or {}
+
+        addressee = Address(
+            name1=addr_detail.get("name1"),
+            name2=addr_detail.get("name2"),
+            street=addr_detail.get("street"),
+            number=addr_detail.get("houseNumber"),
+            zip=addr_detail.get("zip4") or addr_detail.get("zip"),
+            city=addr_detail.get("city"),
+        )
+
+        sender_desc = data.get("summaryDescription") or data.get("productName")
+        sender = Address(name1=sender_desc)
+
+        return cls(
+            identity=mailpiece_id,
+            shipment_number=mailpiece_id,
+            formatted_number=mailpiece_id,
+            source=data.get("mailpieceType") or "PARCEL",
+            global_status=status_type,
+            status=status_type,
+            additional_status=data.get("productName"),
+            description=data.get("summaryDescription"),
+            is_delivered=is_delivered,
+            is_returned=is_returned,
+            account_name=account_name,
+            calculated_delivery_date=status_dt if not is_delivered else None,
+            delivery_date=status_dt if is_delivered else None,
+            last_event_date=status_dt,
+            sender=sender,
+            addressee=addressee,
+            raw=data,
+        )
+
     @property
     def is_parcel(self) -> bool:
         return self.source.upper() == "PARCEL"
@@ -175,7 +227,7 @@ class Shipment:
         """True if parcel is currently out for delivery today."""
         if self.is_delivered:
             return False
-        if self.global_status == "TO_BE_DELIVERED":
+        if self.global_status in ("TO_BE_DELIVERED", "ON_GOING_DELIVERY"):
             return True
         status_str = f"{self.status or ''} {self.additional_status or ''}".lower()
         return "wird zugestellt" in status_str or "out for delivery" in status_str
@@ -224,6 +276,10 @@ class Shipment:
         if self.is_out_for_delivery:
             window = f" ({self.estimated_delivery_window})" if self.estimated_delivery_window else ""
             return f"Out for delivery today{window}"
+        if self.global_status == "WAITING_FOR_PICKUP":
+            return "Ready for pickup"
+        if self.global_status == "NOT_YET_SENT":
+            return "Announced / Not yet sent"
         if self.calculated_delivery_date:
             return f"In transit (Est: {self.calculated_delivery_date.strftime('%Y-%m-%d')})"
         return self.status or self.global_status or "In transit"

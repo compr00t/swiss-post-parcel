@@ -1,5 +1,6 @@
 """Swiss Post API Client supporting both refresh_token and session cookies."""
 
+import base64
 import http.cookiejar
 import json
 import logging
@@ -7,6 +8,8 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import uuid
+from datetime import datetime
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 from .models import Shipment
@@ -28,6 +31,10 @@ class SwissPostClient:
     """Client for Swiss Post with OAuth token refresh and session handling."""
 
     BASE_URL = "https://service.post.ch"
+    MOBSERV_URL = "https://app.post.ch/mobserv/v1/mailpiece/tracking/overview"
+    DEFAULT_CLIENT_ID = "swisspost_main_prod"
+    DEFAULT_TOKEN_ENDPOINT = "https://login.swissid.ch:443/idp/oauth2/access_token"
+    MOBILE_USER_AGENT = "Post/9.6.1 (Android; 35)"
     DEFAULT_USER_AGENT = (
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
         "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"
@@ -38,9 +45,12 @@ class SwissPostClient:
         account_name: str = "Personal",
         refresh_token: Optional[str] = None,
         session_cookies: Optional[str] = None,
-        client_id: str = "ch.post.it.app",
+        client_id: str = DEFAULT_CLIENT_ID,
         client_secret: Optional[str] = None,
-        token_endpoint: str = "https://api.post.ch/OAuth/token",
+        token_endpoint: str = DEFAULT_TOKEN_ENDPOINT,
+        profile_id: Optional[str] = None,
+        device_id: Optional[str] = None,
+        id_token: Optional[str] = None,
         on_token_refreshed: Optional[Callable[[Dict[str, Any]], None]] = None,
         timeout: int = 20,
     ):
@@ -49,6 +59,9 @@ class SwissPostClient:
         self.client_id = client_id
         self.client_secret = client_secret
         self.token_endpoint = token_endpoint
+        self.profile_id = profile_id
+        self.device_id = device_id or str(uuid.uuid4())
+        self.id_token = id_token
         self.on_token_refreshed = on_token_refreshed
         self.timeout = timeout
         self.access_token: Optional[str] = None
@@ -133,12 +146,25 @@ class SwissPostClient:
                 resp_data = json.loads(resp.read().decode("utf-8"))
                 new_access_token = resp_data.get("access_token")
                 new_refresh_token = resp_data.get("refresh_token") or self.refresh_token
+                new_id_token = resp_data.get("id_token")
                 expires_in = resp_data.get("expires_in", 3600)
 
                 if new_access_token:
                     self.access_token = new_access_token
                     self.refresh_token = new_refresh_token
+                    if new_id_token:
+                        self.id_token = new_id_token
                     self.token_expiry = time.time() + float(expires_in) - 60  # 1 min margin
+
+                    if self.id_token and not self.profile_id:
+                        try:
+                            payload_b64 = self.id_token.split(".")[1]
+                            payload_b64 += "=" * (-len(payload_b64) % 4)
+                            claims = json.loads(base64.urlsafe_b64decode(payload_b64.encode("utf-8")).decode("utf-8"))
+                            if "sub" in claims:
+                                self.profile_id = str(claims["sub"])
+                        except Exception as ex:
+                            _LOGGER.debug("[%s] Could not extract sub from id_token: %s", self.account_name, ex)
 
                     _LOGGER.info("[%s] Successfully refreshed access token (expires in %ss)", self.account_name, expires_in)
 
@@ -147,6 +173,8 @@ class SwissPostClient:
                         self.on_token_refreshed({
                             "refresh_token": self.refresh_token,
                             "access_token": self.access_token,
+                            "id_token": self.id_token,
+                            "profile_id": self.profile_id,
                             "expires_at": self.token_expiry,
                         })
                     return True
@@ -162,7 +190,7 @@ class SwissPostClient:
 
     def _ensure_authenticated(self) -> None:
         """Ensure token is valid if using refresh_token."""
-        if self.refresh_token and (not self.access_token or time.time() >= self.token_expiry):
+        if self.refresh_token and (not self.id_token or not self.access_token or time.time() >= self.token_expiry):
             self.refresh_access_token()
 
     def _request(
@@ -234,22 +262,65 @@ class SwissPostClient:
         except urllib.error.URLError as e:
             raise SwissPostAPIError(f"Network error connecting to {url}: {e.reason}") from e
 
+    def get_mobserv_overview(self) -> Dict[str, Any]:
+        """Fetch shipments from mobile mobserv API."""
+        self._ensure_authenticated()
+        token = self.id_token or self.access_token
+        if not token:
+            raise SwissPostAuthError(f"[{self.account_name}] No bearer token available.")
+
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "x-device-id": self.device_id,
+            "User-Agent": self.MOBILE_USER_AGENT,
+            "Accept": "application/json",
+        }
+        if self.profile_id:
+            headers["x-klp-profile"] = self.profile_id
+
+        req = urllib.request.Request(self.MOBSERV_URL, headers=headers, method="GET")
+        try:
+            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+                content = resp.read().decode("utf-8")
+                return json.loads(content)
+        except urllib.error.HTTPError as e:
+            if e.code in (401, 403):
+                _LOGGER.debug("[%s] HTTP %s from mobserv, retrying after refresh...", self.account_name, e.code)
+                self.refresh_access_token()
+                headers["Authorization"] = f"Bearer {self.id_token or self.access_token}"
+                req = urllib.request.Request(self.MOBSERV_URL, headers=headers, method="GET")
+                with urllib.request.urlopen(req, timeout=self.timeout) as resp2:
+                    return json.loads(resp2.read().decode("utf-8"))
+            err_body = e.read().decode("utf-8", errors="replace") if e.fp else ""
+            raise SwissPostAPIError(f"mobserv API HTTP {e.code}: {err_body}") from e
+        except Exception as e:
+            raise SwissPostAPIError(f"Error querying mobserv: {e}") from e
+
     def get_user_info(self) -> Dict[str, Any]:
         """Fetch user profile and verify authentication."""
+        if self.refresh_token:
+            self._ensure_authenticated()
+            user_id = self.profile_id or self.account_name
+            try:
+                overview = self.get_mobserv_overview()
+                return {
+                    "userIdentifier": user_id,
+                    "account": self.account_name,
+                    "overview": overview,
+                }
+            except Exception as e:
+                _LOGGER.error("[%s] Authentication validation failed: %s", self.account_name, e)
+                raise SwissPostAuthError(f"Invalid credentials: {e}") from e
+
         data = self._request("/ekp-web/api/user")
         if not isinstance(data, dict):
             raise SwissPostAPIError(f"Invalid user response: {data}")
         if data.get("anonymous") is True:
-            # If we have a refresh token, try refreshing once
-            if self.refresh_token:
-                self.refresh_access_token()
-                data = self._request("/ekp-web/api/user")
-            if data.get("anonymous") is True:
-                raise SwissPostAuthError(f"[{self.account_name}] Unauthenticated session.")
+            raise SwissPostAuthError(f"[{self.account_name}] Unauthenticated session.")
         return data
 
     def get_all_shipments(self, max_wait_seconds: int = 30) -> List[Shipment]:
-        """Query and poll all consignments for this account."""
+        """Query and poll all consignments for this account (web session fallback)."""
         user_info = self.get_user_info()
         user_id = user_info.get("userIdentifier")
         if not user_id:
@@ -284,6 +355,29 @@ class SwissPostClient:
 
     def get_parcels(self) -> Tuple[List[Shipment], List[Shipment]]:
         """Return (upcoming_parcels, past_parcels) filtered for parcels."""
+        if self.refresh_token:
+            data = self.get_mobserv_overview()
+            in_progress = data.get("inProgress") or []
+            completed = data.get("completed") or []
+
+            upcoming = [
+                Shipment.from_mobserv_dict(s, account_name=self.account_name)
+                for s in in_progress
+            ]
+            past = [
+                Shipment.from_mobserv_dict(s, account_name=self.account_name)
+                for s in completed
+            ]
+
+            upcoming.sort(
+                key=lambda s: s.calculated_delivery_date or s.last_event_date or s.sending_date or datetime.max
+            )
+            past.sort(
+                key=lambda s: s.delivery_date or s.last_event_date or datetime.min,
+                reverse=True,
+            )
+            return upcoming, past
+
         all_shipments = self.get_all_shipments()
         parcels = [s for s in all_shipments if s.is_parcel]
 
@@ -291,10 +385,10 @@ class SwissPostClient:
         past = [s for s in parcels if s.is_delivered]
 
         upcoming.sort(
-            key=lambda s: s.calculated_delivery_date or s.last_event_date or s.sending_date or 0
+            key=lambda s: s.calculated_delivery_date or s.last_event_date or s.sending_date or datetime.max
         )
         past.sort(
-            key=lambda s: s.delivery_date or s.last_event_date or 0,
-            reverse=True
+            key=lambda s: s.delivery_date or s.last_event_date or datetime.min,
+            reverse=True,
         )
         return upcoming, past

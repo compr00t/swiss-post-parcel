@@ -20,6 +20,9 @@ from .const import (
     CONF_AUTH_TYPE,
     CONF_CLIENT_ID,
     CONF_CLIENT_SECRET,
+    CONF_DEVICE_ID,
+    CONF_ID_TOKEN,
+    CONF_PROFILE_ID,
     CONF_REFRESH_TOKEN,
     CONF_SCAN_INTERVAL,
     CONF_SESSION_COOKIES,
@@ -67,11 +70,29 @@ class SwissPostConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         client_id=user_input.get(CONF_CLIENT_ID, DEFAULT_CLIENT_ID),
                         token_endpoint=user_input.get(CONF_TOKEN_ENDPOINT, DEFAULT_TOKEN_ENDPOINT),
                     )
-                    return client.get_user_info()
+                    info = client.get_user_info()
+                    return {
+                        "user_info": info,
+                        "refresh_token": client.refresh_token,
+                        "device_id": client.device_id,
+                        "profile_id": client.profile_id,
+                        "id_token": client.id_token,
+                    }
 
                 try:
-                    user_info = await self.hass.async_add_executor_job(_validate_credentials)
+                    res = await self.hass.async_add_executor_job(_validate_credentials)
+                    user_info = res["user_info"]
                     user_id = user_info.get("userIdentifier") or account_name
+
+                    data_to_save = dict(user_input)
+                    if res.get("refresh_token"):
+                        data_to_save[CONF_REFRESH_TOKEN] = res["refresh_token"]
+                    if res.get("device_id"):
+                        data_to_save[CONF_DEVICE_ID] = res["device_id"]
+                    if res.get("profile_id"):
+                        data_to_save[CONF_PROFILE_ID] = res["profile_id"]
+                    if res.get("id_token"):
+                        data_to_save[CONF_ID_TOKEN] = res["id_token"]
 
                     # Ensure unique ID per account
                     await self.async_set_unique_id(f"{DOMAIN}_{user_id}")
@@ -79,7 +100,7 @@ class SwissPostConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
                     return self.async_create_entry(
                         title=f"Swiss Post ({account_name})",
-                        data=user_input,
+                        data=data_to_save,
                     )
                 except SwissPostAuthError:
                     errors["base"] = "invalid_auth"
@@ -141,11 +162,31 @@ class SwissPostConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     account_name=new_data.get(CONF_ACCOUNT_NAME, "Personal"),
                     refresh_token=new_data.get(CONF_REFRESH_TOKEN),
                     session_cookies=new_data.get(CONF_SESSION_COOKIES),
+                    client_id=new_data.get(CONF_CLIENT_ID, DEFAULT_CLIENT_ID),
+                    token_endpoint=new_data.get(CONF_TOKEN_ENDPOINT, DEFAULT_TOKEN_ENDPOINT),
+                    device_id=new_data.get(CONF_DEVICE_ID),
+                    profile_id=new_data.get(CONF_PROFILE_ID),
                 )
-                return client.get_user_info()
+                info = client.get_user_info()
+                return {
+                    "user_info": info,
+                    "refresh_token": client.refresh_token,
+                    "device_id": client.device_id,
+                    "profile_id": client.profile_id,
+                    "id_token": client.id_token,
+                }
 
             try:
-                await self.hass.async_add_executor_job(_validate_reauth)
+                res = await self.hass.async_add_executor_job(_validate_reauth)
+                if res.get("refresh_token"):
+                    new_data[CONF_REFRESH_TOKEN] = res["refresh_token"]
+                if res.get("device_id"):
+                    new_data[CONF_DEVICE_ID] = res["device_id"]
+                if res.get("profile_id"):
+                    new_data[CONF_PROFILE_ID] = res["profile_id"]
+                if res.get("id_token"):
+                    new_data[CONF_ID_TOKEN] = res["id_token"]
+
                 self.hass.config_entries.async_update_entry(self._reauth_entry, data=new_data)
                 await self.hass.config_entries.async_reload(self._reauth_entry.entry_id)
                 return self.async_abort(reason="reauth_successful")

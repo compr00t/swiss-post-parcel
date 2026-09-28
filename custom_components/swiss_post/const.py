@@ -11,6 +11,9 @@ CONF_CLIENT_ID = "client_id"
 CONF_CLIENT_SECRET = "client_secret"
 CONF_TOKEN_ENDPOINT = "token_endpoint"
 CONF_SCAN_INTERVAL = "scan_interval"
+CONF_DEVICE_ID = "device_id"
+CONF_ID_TOKEN = "id_token"
+CONF_PROFILE_ID = "profile_id"
 
 # Auth types
 AUTH_TYPE_REFRESH_TOKEN = "refresh_token"
@@ -19,8 +22,8 @@ AUTH_TYPE_COOKIES = "cookies"
 # Defaults
 DEFAULT_ACCOUNT_NAME = "Personal"
 DEFAULT_SCAN_INTERVAL = 15  # minutes
-DEFAULT_CLIENT_ID = "ch.post.it.app"
-DEFAULT_TOKEN_ENDPOINT = "https://api.post.ch/OAuth/token"
+DEFAULT_CLIENT_ID = "swisspost_main_prod"
+DEFAULT_TOKEN_ENDPOINT = "https://login.swissid.ch:443/idp/oauth2/access_token"
 
 # Attributes
 ATTR_PACKETS = "packets"
