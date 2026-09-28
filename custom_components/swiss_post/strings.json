@@ -3,21 +3,21 @@
     "step": {
       "user": {
         "title": "Connect Swiss Post Account",
-        "description": "Configure your Swiss Post account using a long-lived mobile refresh token or web session cookies.",
+        "description": "Configure your Swiss Post account using a long-lived mobile refresh token or the full Cookie header string from your browser.",
         "data": {
-          "account_name": "Account Label (e.g. Personal, Work, Partner)",
+          "account_name": "Account Label (e.g. Primary, Work)",
           "auth_type": "Authentication Method",
           "refresh_token": "Refresh Token",
-          "session_cookies": "Session Cookies (NPKlpipSession)",
+          "session_cookies": "Cookie Header (full browser Cookie string)",
           "scan_interval": "Update Interval (minutes)"
         }
       },
       "reauth_confirm": {
         "title": "Reauthenticate Swiss Post",
-        "description": "Your Swiss Post session has expired. Please enter an updated refresh token or session cookie.",
+        "description": "Your Swiss Post session has expired. Please enter an updated refresh token or full cookie string.",
         "data": {
           "refresh_token": "Refresh Token",
-          "session_cookies": "Session Cookies"
+          "session_cookies": "Cookie Header (full browser Cookie string)"
         }
       }
     },
@@ -25,7 +25,7 @@
       "cannot_connect": "Failed to connect to Swiss Post. Please check your network and parameters.",
       "invalid_auth": "Authentication failed. Invalid refresh token or session expired.",
       "missing_refresh_token": "Please provide a valid refresh token.",
-      "missing_session_cookies": "Please provide valid session cookies."
+      "missing_session_cookies": "Please provide the complete browser cookie string."
     },
     "abort": {
       "already_configured": "This Swiss Post account is already configured.",
