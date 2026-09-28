@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 import logging
 from typing import Any, Dict
 
@@ -52,17 +53,25 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     profile_id = entry.data.get(CONF_PROFILE_ID)
     id_token = entry.data.get(CONF_ID_TOKEN)
 
+    current_entry_data = dict(entry.data)
+
     def on_token_refreshed(new_tokens: Dict[str, Any]) -> None:
-        """Persist rotated refresh token back to the config entry."""
-        _LOGGER.debug("[%s] Saving rotated token to config entry", account_name)
-        new_data = dict(entry.data)
-        if "refresh_token" in new_tokens and new_tokens["refresh_token"]:
-            new_data[CONF_REFRESH_TOKEN] = new_tokens["refresh_token"]
-        if "id_token" in new_tokens and new_tokens["id_token"]:
-            new_data[CONF_ID_TOKEN] = new_tokens["id_token"]
-        if "profile_id" in new_tokens and new_tokens["profile_id"]:
-            new_data[CONF_PROFILE_ID] = new_tokens["profile_id"]
-        hass.config_entries.async_update_entry(entry, data=new_data)
+        """Persist rotated refresh token back to the config entry thread-safely."""
+        try:
+            _LOGGER.debug("[%s] Saving rotated token to config entry", account_name)
+            if "refresh_token" in new_tokens and new_tokens["refresh_token"]:
+                current_entry_data[CONF_REFRESH_TOKEN] = new_tokens["refresh_token"]
+            if "id_token" in new_tokens and new_tokens["id_token"]:
+                current_entry_data[CONF_ID_TOKEN] = new_tokens["id_token"]
+            if "profile_id" in new_tokens and new_tokens["profile_id"]:
+                current_entry_data[CONF_PROFILE_ID] = new_tokens["profile_id"]
+
+            data_copy = dict(current_entry_data)
+            hass.loop.call_soon_threadsafe(
+                functools.partial(hass.config_entries.async_update_entry, entry, data=data_copy)
+            )
+        except Exception as err:
+            _LOGGER.error("[%s] Failed to schedule config entry update: %s", account_name, err)
 
     client = SwissPostClient(
         account_name=account_name,

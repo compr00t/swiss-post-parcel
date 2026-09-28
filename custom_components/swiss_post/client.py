@@ -170,13 +170,16 @@ class SwissPostClient:
 
                     # If token rotated or updated, notify Home Assistant to save it
                     if self.on_token_refreshed:
-                        self.on_token_refreshed({
-                            "refresh_token": self.refresh_token,
-                            "access_token": self.access_token,
-                            "id_token": self.id_token,
-                            "profile_id": self.profile_id,
-                            "expires_at": self.token_expiry,
-                        })
+                        try:
+                            self.on_token_refreshed({
+                                "refresh_token": self.refresh_token,
+                                "access_token": self.access_token,
+                                "id_token": self.id_token,
+                                "profile_id": self.profile_id,
+                                "expires_at": self.token_expiry,
+                            })
+                        except Exception as cb_err:
+                            _LOGGER.warning("[%s] Failed executing on_token_refreshed callback: %s", self.account_name, cb_err)
                     return True
         except urllib.error.HTTPError as e:
             err_text = e.read().decode("utf-8", errors="replace") if e.fp else ""
