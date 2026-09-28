@@ -1,0 +1,45 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Schweizerische Post Konto verbinden",
+        "description": "Konfigurieren Sie Ihr Post-Konto mit einem langlebigen Refresh-Token der Mobile App oder Sitzungs-Cookies.",
+        "data": {
+          "account_name": "Konto-Bezeichnung (z.B. Privat, Arbeit, Partner)",
+          "auth_type": "Authentifizierungsmethode",
+          "refresh_token": "Refresh-Token",
+          "session_cookies": "Sitzungs-Cookies (NPKlpipSession)",
+          "scan_interval": "Aktualisierungsintervall (Minuten)"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Erneut anmelden bei Schweizerischer Post",
+        "description": "Ihre Post-Sitzung ist abgelaufen. Bitte geben Sie einen aktualisierten Refresh-Token oder Cookie ein.",
+        "data": {
+          "refresh_token": "Refresh-Token",
+          "session_cookies": "Sitzungs-Cookies"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Verbindung zur Schweizerischen Post fehlgeschlagen. Bitte Netzwerk und Parameter prüfen.",
+      "invalid_auth": "Authentifizierung fehlgeschlagen. Ungültiger Token oder abgelaufene Sitzung.",
+      "missing_refresh_token": "Bitte geben Sie einen gültigen Refresh-Token ein.",
+      "missing_session_cookies": "Bitte geben Sie gültige Sitzungs-Cookies ein."
+    },
+    "abort": {
+      "already_configured": "Dieses Post-Konto ist bereits konfiguriert.",
+      "reauth_successful": "Erneute Authentifizierung erfolgreich."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Post Optionen",
+        "data": {
+          "scan_interval": "Aktualisierungsintervall (Minuten)"
+        }
+      }
+    }
+  }
+}

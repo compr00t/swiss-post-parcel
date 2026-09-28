@@ -1,0 +1,23 @@
+# Byte-compiled / optimized files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+env/
+venv/
+
+# macOS system files
+.DS_Store
+._*
+
+# IDEs and editors
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Home Assistant local dev / testing artifacts
+.storage/
+home-assistant.log*

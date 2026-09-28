@@ -1,0 +1,11 @@
+{
+  "domain": "swiss_post",
+  "name": "Swiss Post",
+  "codeowners": ["@compr00t"],
+  "config_flow": true,
+  "documentation": "https://github.com/compr00t/swiss-post-parcel",
+  "integration_type": "hub",
+  "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/compr00t/swiss-post-parcel/issues",
+  "version": "1.0.0"
+}
