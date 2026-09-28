@@ -59,16 +59,18 @@ class SwissPostConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             elif auth_type == AUTH_TYPE_COOKIES and not session_cookies:
                 errors[CONF_SESSION_COOKIES] = "missing_session_cookies"
             else:
-                client = SwissPostClient(
-                    account_name=account_name,
-                    refresh_token=refresh_token,
-                    session_cookies=session_cookies,
-                    client_id=user_input.get(CONF_CLIENT_ID, DEFAULT_CLIENT_ID),
-                    token_endpoint=user_input.get(CONF_TOKEN_ENDPOINT, DEFAULT_TOKEN_ENDPOINT),
-                )
+                def _validate_credentials() -> Dict[str, Any]:
+                    client = SwissPostClient(
+                        account_name=account_name,
+                        refresh_token=refresh_token,
+                        session_cookies=session_cookies,
+                        client_id=user_input.get(CONF_CLIENT_ID, DEFAULT_CLIENT_ID),
+                        token_endpoint=user_input.get(CONF_TOKEN_ENDPOINT, DEFAULT_TOKEN_ENDPOINT),
+                    )
+                    return client.get_user_info()
 
                 try:
-                    user_info = await self.hass.async_add_executor_job(client.get_user_info)
+                    user_info = await self.hass.async_add_executor_job(_validate_credentials)
                     user_id = user_info.get("userIdentifier") or account_name
 
                     # Ensure unique ID per account
@@ -134,13 +136,16 @@ class SwissPostConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             new_data = dict(self._reauth_entry.data)
             new_data.update(user_input)
 
-            client = SwissPostClient(
-                account_name=new_data.get(CONF_ACCOUNT_NAME, "Personal"),
-                refresh_token=new_data.get(CONF_REFRESH_TOKEN),
-                session_cookies=new_data.get(CONF_SESSION_COOKIES),
-            )
+            def _validate_reauth() -> Dict[str, Any]:
+                client = SwissPostClient(
+                    account_name=new_data.get(CONF_ACCOUNT_NAME, "Personal"),
+                    refresh_token=new_data.get(CONF_REFRESH_TOKEN),
+                    session_cookies=new_data.get(CONF_SESSION_COOKIES),
+                )
+                return client.get_user_info()
+
             try:
-                await self.hass.async_add_executor_job(client.get_user_info)
+                await self.hass.async_add_executor_job(_validate_reauth)
                 self.hass.config_entries.async_update_entry(self._reauth_entry, data=new_data)
                 await self.hass.config_entries.async_reload(self._reauth_entry.entry_id)
                 return self.async_abort(reason="reauth_successful")

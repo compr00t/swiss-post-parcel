@@ -56,12 +56,19 @@ class SwissPostClient:
 
         self.cookie_jar = http.cookiejar.CookieJar()
         self.cookie_header_str = ""
-        self.opener = urllib.request.build_opener(
-            urllib.request.HTTPCookieProcessor(self.cookie_jar)
-        )
+        self._opener: Optional[urllib.request.OpenerDirector] = None
 
         if session_cookies:
             self.set_cookies_from_header(session_cookies)
+
+    @property
+    def opener(self) -> urllib.request.OpenerDirector:
+        """Lazily initialize opener in worker thread to avoid blocking event loop."""
+        if self._opener is None:
+            self._opener = urllib.request.build_opener(
+                urllib.request.HTTPCookieProcessor(self.cookie_jar)
+            )
+        return self._opener
 
     def set_cookies_from_header(self, header_str: str) -> None:
         """Store cookie header and populate CookieJar."""
