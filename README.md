@@ -36,6 +36,43 @@ Add the integration via **Settings** > **Devices & Services** > **Add Integratio
 
 Multiple accounts can be configured by adding the integration again. Consignments across all accounts are merged into the consolidated sensors.
 
+## Obtaining a Mobile Refresh Token
+
+Using a **Refresh Token** is strongly recommended over session cookies because web cookies expire within days, while OAuth refresh tokens are automatically rotated and renewed by Home Assistant indefinitely. SwissID supports concurrent sessions, so extracting a token will not log you out of your phone app.
+
+### Prerequisites
+
+- An Android emulator (e.g. Android Studio AVD with Google APIs / root access) or a rooted Android device.
+- Official **Swiss Post** app (`Post` / `com.nth.swisspost`) installed and logged in with your SwissID.
+- `adb` (Android Debug Bridge) installed and connected (`adb devices`).
+- Python 3.
+
+---
+
+### Token Extraction
+
+1. **Find the app's user ID**:
+   ```bash
+   adb shell dumpsys package com.nth.swisspost | grep userId=
+   # Example output: userId=12345
+   ```
+2. **Push the pre-compiled helper**:
+   ```bash
+   adb push tools/extract_token.jar /data/local/tmp/extract_token.jar
+   ```
+   *(Source code available in [`tools/ExtractToken.java`](file:///Users/patrick/tools/swiss_post_parcel/tools/ExtractToken.java))*.
+3. **Execute via `app_process` with the app UID**:
+   ```bash
+   adb shell "CLASSPATH=/data/local/tmp/extract_token.jar app_process /data/local/tmp ExtractToken 12345"
+   ```
+   The tool loads `_androidx_security_master_key_` from `AndroidKeyStore`, decrypts the Google Tink AEAD keyset from `/data/data/com.nth.swisspost/shared_prefs/preferences_post_auth.xml`, and decrypts the stored auth JSON payload containing `refreshToken`, `accessToken`, and `idToken`.
+4. **Clean up**:
+   ```bash
+   adb shell rm -f /data/local/tmp/extract_token.jar
+   ```
+
+---
+
 ## Entities
 
 ### Consolidated Entities
